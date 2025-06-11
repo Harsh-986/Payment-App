@@ -4,18 +4,18 @@ const signupZodSchema = z.object({
     username : z.string(),
     password : z.string(),
     firstName: z.string(),
-    lastName: z.string()
+    lastName : z.string()
 })
 
 const signinZodSchema = z.object({
     username: z.string(),
-    password:z.string()
+    password: z.string()
 })
 
-const updateBody = zod.object({
-	password: zod.string().optional(),
-    firstName: zod.string().optional(),
-    lastName: zod.string().optional(),
+const updateBody = z.object({
+	password : z.string().optional(),
+    firstName: z.string().optional(),
+    lastName : z.string().optional(),
 })
 
 

@@ -1,126 +1,95 @@
-const express = require("express")
-const router = express.Router()
-const {signinZodSchema,signupZodSchema,updateBody} = require("../zodSchema")
-const { user, Account } = require('../MongoSchema');
+const express = require("express");
+const router = express.Router();
+const { signinZodSchema, signupZodSchema, updateBody } = require("../zodSchema");
+const { user, Account } = require("../MongoSchema");
 const jwt = require("jsonwebtoken");
-const {authMiddleware} = require("../middleware")
+const { JWT_SECRET } = require("../config");
+const { authMiddleware } = require("../middleware");
 
-router.post("/signup" ,async(req,res) => {
-    const passData = signupZodSchema.safeParse(req.body)
-    if (!passData.success){
-        res.status(400).json({          // if the client data is correct 
-           msg : "invalid input"
-        })
-    }
-    
-    const User = await user.finOne({
-        username:body.username          // if the client data is already present 
-    })
-
-    if (User._id){
-        return res.json({                  // send user already exists
-            msg:"Email already exists"
-        })
+// SIGNUP ROUTE
+router.post("/signup", async (req, res) => {
+    const result = signupZodSchema.safeParse(req.body);
+    if (!result.success) {
+        return res.status(400).json({ msg: "Invalid input" });
     }
 
-    const userId = User._id
+    const existing = await user.findOne({ username: req.body.username });
+    if (existing) {
+        return res.status(409).json({ msg: "Username already exists" });
+    }
+
+    const newUser = await user.create(req.body);
+    const userId = newUser._id;
+
     await Account.create({
         userId,
-        balance: 1 + Math.random() * 10000
-    })
+        balance: 1 + Math.floor(Math.random() * 10000)
+    });
 
-    await user.create(body)   
-                                            // if not a user
-    const token = jwt.sign({
-        userId: User._id
-    },JWT_SECRET)          // send jwt token 
-
-    res.json({
-        msg:"user created successfully",  
-        token : token                      
-    })
-})
+    const token = jwt.sign({ userId }, JWT_SECRET);
+    return res.status(201).json({
+        msg: "User created successfully",
+        token: token  // 👈 Add 'Bearer ' prefix here if your frontend expects it
+    });
+});
 
 
-
-router.post("/sigin" ,async(req,res) =>{
-    const signindata = signinZodSchema.safeParse(req.body)
-
-    if(!signindata.success) {
-        res.status(411).json({
-            msg:"incorrect"
-        })
+// SIGNIN ROUTE
+router.post("/signin", async (req, res) => {
+    const result = signinZodSchema.safeParse(req.body);
+    if (!result.success) {
+        return res.status(411).json({ msg: "Incorrect input" });
     }
 
-    const User = await user.findOne({
-        username:body.username,          // if the client data is already present 
-        password:body.password
-    })
+    const foundUser = await user.findOne({
+        username: req.body.username,
+        password: req.body.password
+    });
 
-    if (User) {
-        const token = jwt.sign({
-            userId: user._id
-        }, JWT_SECRET);
-
-        res.json({
-        token: token
-        })
-
-        return
+    if (!foundUser) {
+        return res.status(401).json({ msg: "Invalid credentials" });
     }
 
-    res.json({
-        msg:"error while login"
-    })
-
-})
+    const token = jwt.sign({ userId: foundUser._id }, JWT_SECRET);
+    return res.json({ token: token });  // 👈 Include 'Bearer ' prefix for standardization
+});
 
 
-router.put("/",authMiddleware,async(req,res)=> {
-    const { success } = updateBody.safeParse(req.body)
-    if (!success) {
-        res.status(411).json({
-            message: "Error while updating information"
-        })
+// UPDATE USER ROUTE (requires token)
+router.put("/", authMiddleware, async (req, res) => {
+    const result = updateBody.safeParse(req.body);
+    if (!result.success) {
+        return res.status(411).json({ msg: "Error while updating information" });
     }
-    
-    await user.updateOne(req.body, {
-        id: req.userId
-    })
 
-    res.json({
-        msg:"update successfully"
-    })
-
-})
+    try {
+        await user.updateOne({ _id: req.userId }, req.body);
+        return res.json({ msg: "Updated successfully" });
+    } catch (err) {
+        return res.status(500).json({ msg: "Update failed", error: err.message });
+    }
+});
 
 
-router.get("/bulk",async(req,res) =>{
-    const filter = req.query.filter || ""
+// BULK USER SEARCH
+router.get("/bulk", async (req, res) => {
+    const filter = req.query.filter || "";
 
     const users = await user.find({
-        $or: [{
-            firstName: {    //This code searches for users where either firstName OR lastName contains the filter string. It's a good pattern for implementing search functionality!
-                "$regex": filter,
-                "$options": "i"  // case-insensitive
-            }
-        }, {
-            lastName: {
-                "$regex": filter,
-                "$options": "i"
-            }
-        }]
-    })
-    res.json({
-        user: users.map(user => ({
-            username: user.username,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            _id: user._id
-        })
-    )})
+        $or: [
+            { firstName: { $regex: filter, $options: "i" } },
+            { lastName: { $regex: filter, $options: "i" } }
+        ]
+    });
 
-})
+    return res.json({
+        user: users.map(u => ({
+            username: u.username,
+            firstName: u.firstName,
+            lastName: u.lastName,
+            _id: u._id
+        }))
+    });
+});
 
-
-module.exports = router
+module.exports = router;
